@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+
+# PyInstaller
+build/
+#dist/
+*.spec
+
+# Logs e temporarios
+*.log
+*.tmp
+*.bak
+
+# Arquivos locais de email
+*.mbox
+Inbox
+Inbox_*
+
+# IDE/editor
+.vscode/
+.idea/
