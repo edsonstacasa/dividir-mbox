@@ -10,7 +10,7 @@ env/
 
 # PyInstaller
 build/
-#dist/
+dist/
 *.spec
 
 # Logs e temporarios
