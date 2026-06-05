@@ -1,11 +1,45 @@
 import email.utils
-import mailbox
 import queue
 import threading
 import tkinter as tk
+import traceback
 from collections import defaultdict
+from email import policy
+from email.parser import BytesParser
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
+
+
+def iterar_mensagens_mbox(caminho_entrada):
+    buffer = None
+    encontrou_primeira_mensagem = False
+
+    with open(caminho_entrada, "rb") as arquivo:
+        for linha in arquivo:
+            if linha.startswith(b"From "):
+                if encontrou_primeira_mensagem and buffer:
+                    yield bytes(buffer)
+
+                encontrou_primeira_mensagem = True
+                buffer = bytearray()
+                buffer.extend(linha)
+                continue
+
+            if encontrou_primeira_mensagem:
+                buffer.extend(linha)
+
+    if encontrou_primeira_mensagem and buffer:
+        yield bytes(buffer)
+
+
+def obter_mensagem(raw_msg):
+    linhas = raw_msg.splitlines(keepends=True)
+    if linhas and linhas[0].startswith(b"From "):
+        raw_email = b"".join(linhas[1:])
+    else:
+        raw_email = raw_msg
+
+    return BytesParser(policy=policy.compat32).parsebytes(raw_email)
 
 
 def obter_periodo(msg, modo_divisao):
@@ -32,21 +66,23 @@ def obter_caminho_saida(caminho_entrada, periodo):
 def dividir_mbox(caminho_entrada, modo_divisao, enviar_evento):
     arquivos = {}
     contadores = defaultdict(int)
-    mbox = mailbox.mbox(str(caminho_entrada), create=False)
 
     try:
         enviar_evento("log", f"Abrindo mbox: {caminho_entrada}")
 
-        for i, msg in enumerate(mbox, start=1):
+        for i, raw_msg in enumerate(iterar_mensagens_mbox(caminho_entrada), start=1):
+            msg = obter_mensagem(raw_msg)
             periodo = obter_periodo(msg, modo_divisao)
 
             if periodo not in arquivos:
                 caminho_saida = obter_caminho_saida(caminho_entrada, periodo)
-                arquivos[periodo] = mailbox.mbox(str(caminho_saida))
-                arquivos[periodo].lock()
+                arquivos[periodo] = open(caminho_saida, "ab")
                 enviar_evento("log", f"Criando saida: {caminho_saida}")
 
-            arquivos[periodo].add(msg)
+            arquivos[periodo].write(raw_msg)
+            if not raw_msg.endswith(b"\n"):
+                arquivos[periodo].write(b"\n")
+
             contadores[periodo] += 1
 
             if i % 100 == 0:
@@ -61,17 +97,14 @@ def dividir_mbox(caminho_entrada, modo_divisao, enviar_evento):
     finally:
         for arq in arquivos.values():
             arq.flush()
-            arq.unlock()
             arq.close()
-
-        mbox.close()
 
 
 class DividirMboxApp(tk.Tk):
     def __init__(self):
         super().__init__()
 
-        self.title("Dividir mbox")
+        self.title("Dividir mbox 1.1")
         self.geometry("760x520")
         self.minsize(680, 460)
 
@@ -147,7 +180,7 @@ class DividirMboxApp(tk.Tk):
         caminho = filedialog.askopenfilename(
             title="Selecione o arquivo mbox",
             filetypes=[
-                ("Arquivos mbox", "*.mbox *"),
+                ("Arquivos mbox e Thunderbird", ("*.mbox", "*")),
                 ("Todos os arquivos", "*.*"),
             ],
         )
@@ -156,9 +189,16 @@ class DividirMboxApp(tk.Tk):
             self.status_var.set("Arquivo selecionado.")
 
     def _iniciar_processamento(self):
-        caminho = Path(self.caminho_var.get().strip().strip('"')).expanduser()
+        caminho = Path(self.caminho_var.get().strip().strip('"')).expanduser().resolve()
         if not caminho.is_file():
             messagebox.showerror("Arquivo invalido", "Selecione um arquivo mbox existente.")
+            return
+
+        try:
+            with open(caminho, "rb"):
+                pass
+        except OSError as exc:
+            messagebox.showerror("Erro ao abrir arquivo", f"Nao foi possivel ler o arquivo:\n{caminho}\n\n{exc}")
             return
 
         self._limpar_log()
@@ -176,7 +216,8 @@ class DividirMboxApp(tk.Tk):
         try:
             dividir_mbox(caminho, modo_divisao, self._enviar_evento)
         except Exception as exc:
-            self._enviar_evento("erro", str(exc))
+            detalhe = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+            self._enviar_evento("erro", detalhe)
 
     def _enviar_evento(self, tipo, mensagem):
         self.eventos.put((tipo, mensagem))

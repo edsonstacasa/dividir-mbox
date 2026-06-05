@@ -1,5 +1,5 @@
 # Histórico de Sessão - Santa Casa de Batatais
-# Última modificação: 01/06/2026
+# Última modificação: 05/06/2026
 
 ## Informações do Projeto
 - **Cliente/Local:** Santa Casa de Misericórdia de Batatais
@@ -17,6 +17,9 @@
 - `.gitignore` — regras para ignorar cache Python, builds PyInstaller, ambientes virtuais e arquivos mbox locais.
 - `HISTORICO_SESSAO.md` — histórico persistente da sessão.
 - `__pycache__/` — artefato gerado por `py -m py_compile` durante validação de sintaxe.
+- `build/` — artefato local gerado pelo PyInstaller, ignorado pelo Git.
+- `dist/dividir_mbox_gui.exe` — executável Windows compilado da versão GUI.
+- `dividir_mbox_gui.spec` — especificação local gerada pelo PyInstaller, ignorada pelo Git.
 
 ---
 
@@ -67,6 +70,21 @@
 - **Decisões:** Documentação passa a tratar "arquivo mbox" como formato, não como dependente da extensão `.mbox`.
 - **Bugs corrigidos:** Nenhum.
 
+### 05/06/2026: Correção de Erro em Mbox sem Extensão no GUI Compilado
+- **Ações:** Alterados `dividir_mbox_gui.py` e `dividir_mbox.py` para ler o mbox de entrada via streaming binário com `BytesParser`; mantida escrita das saídas com `mailbox.mbox`; atualizado `README.md` com recomendação de recompilar o `.exe` após alteração e fechar o Thunderbird antes de processar arquivos do perfil.
+- **Decisões:** A entrada não depende mais de `mailbox.mbox(create=False)`; arquivos mbox sem extensão do Thunderbird passam a ser lidos por `open(..., "rb")` e parseados por separadores `From `.
+- **Bugs corrigidos:** GUI compilada retornava `Errno 22 Invalid argument` ao abrir `C:\Users\Cenf\Documents\Inbox` → abertura direta via `mailbox.mbox` era frágil no Windows/EXE para arquivo real sem extensão → substituída leitura de entrada por parser mbox em streaming.
+
+### 05/06/2026: Correção Final para Executável GUI em Windows sem Python
+- **Ações:** Removido uso de `mailbox.mbox` também na escrita das saídas em `dividir_mbox_gui.py` e `dividir_mbox.py`; saída passou a ser escrita em binário preservando o bloco mbox original; adicionados traceback detalhado no log da GUI, validação prévia de leitura do arquivo e título `Dividir mbox 1.1`; filtro do seletor agora cobre arquivos `.mbox` e arquivos sem extensão; recompilado `dist/dividir_mbox_gui.exe` com `py -m PyInstaller --onefile --windowed --clean dividir_mbox_gui.py`.
+- **Decisões:** Versão distribuível Windows não depende mais de `mailbox.mbox` para entrada nem para saída, evitando lock/dotlock e chamadas frágeis no executável compilado.
+- **Bugs corrigidos:** `Errno 22 Invalid argument` persistia no `.exe` distribuído em Windows sem Python → falha podia ocorrer na criação/bloqueio das saídas via `mailbox.mbox` mesmo após corrigir a entrada → escrita das saídas passou para `open(..., "ab")`.
+
+### 05/06/2026: Diagnóstico Real de Bloqueio por Antivírus
+- **Ações:** Atualizado `README.md` com seção de solução de problemas para `Errno 22` causado por antivírus bloqueando mbox com mensagem/anexo malicioso.
+- **Decisões:** Diagnóstico final do caso reportado: o arquivo `Inbox` continha e-mail com malware e foi bloqueado pelo antivírus; as mudanças de leitura/escrita binária permanecem como robustez adicional, não como causa raiz principal do caso real.
+- **Bugs corrigidos:** Erro no `.exe` GUI ao processar `Inbox` → antivírus bloqueava o arquivo por detecção de malware em e-mail armazenado → documentado procedimento seguro: verificar alerta/quarentena, fechar Thunderbird, usar cópia do mbox e tratar o arquivo como potencialmente contaminado.
+
 ### Tarefas Pendentes
 - [x] Revisar `dividir_mbox.py` — solicitação atual do usuário.
 - [x] Alterar `dividir_mbox.py` para solicitar o arquivo mbox — solicitação atual do usuário.
@@ -76,3 +94,6 @@
 - [x] Documentar compatibilidade Linux da versão CLI — solicitação atual do usuário.
 - [x] Documentar distribuição da versão compilada — solicitação atual do usuário.
 - [x] Documentar arquivos mbox sem extensão do Thunderbird — solicitação atual do usuário.
+- [x] Corrigir erro `Errno 22` na versão GUI compilada com arquivo `Inbox` sem extensão — solicitação atual do usuário.
+- [x] Corrigir persistência do erro no `.exe` GUI distribuído para Windows sem Python — solicitação atual do usuário.
+- [x] Documentar diagnóstico real de bloqueio por antivírus em mbox com malware — solicitação atual do usuário.

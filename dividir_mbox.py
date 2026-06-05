@@ -1,8 +1,41 @@
 import email.utils
-import mailbox
 import sys
 from collections import defaultdict
+from email import policy
+from email.parser import BytesParser
 from pathlib import Path
+
+
+def iterar_mensagens_mbox(caminho_entrada):
+    buffer = None
+    encontrou_primeira_mensagem = False
+
+    with open(caminho_entrada, "rb") as arquivo:
+        for linha in arquivo:
+            if linha.startswith(b"From "):
+                if encontrou_primeira_mensagem and buffer:
+                    yield bytes(buffer)
+
+                encontrou_primeira_mensagem = True
+                buffer = bytearray()
+                buffer.extend(linha)
+                continue
+
+            if encontrou_primeira_mensagem:
+                buffer.extend(linha)
+
+    if encontrou_primeira_mensagem and buffer:
+        yield bytes(buffer)
+
+
+def obter_mensagem(raw_msg):
+    linhas = raw_msg.splitlines(keepends=True)
+    if linhas and linhas[0].startswith(b"From "):
+        raw_email = b"".join(linhas[1:])
+    else:
+        raw_email = raw_msg
+
+    return BytesParser(policy=policy.compat32).parsebytes(raw_email)
 
 
 def obter_periodo(msg, modo_divisao):
@@ -62,18 +95,20 @@ def main():
     contadores = defaultdict(int)
 
     print(f"Abrindo mbox: {caminho_entrada}")
-    mbox = mailbox.mbox(str(caminho_entrada), create=False)
 
     try:
-        for i, msg in enumerate(mbox, start=1):
+        for i, raw_msg in enumerate(iterar_mensagens_mbox(caminho_entrada), start=1):
+            msg = obter_mensagem(raw_msg)
             periodo = obter_periodo(msg, modo_divisao)
 
             if periodo not in arquivos:
                 caminho_saida = obter_caminho_saida(caminho_entrada, periodo)
-                arquivos[periodo] = mailbox.mbox(str(caminho_saida))
-                arquivos[periodo].lock()
+                arquivos[periodo] = open(caminho_saida, "ab")
 
-            arquivos[periodo].add(msg)
+            arquivos[periodo].write(raw_msg)
+            if not raw_msg.endswith(b"\n"):
+                arquivos[periodo].write(b"\n")
+
             contadores[periodo] += 1
 
             if i % 100 == 0:
@@ -85,10 +120,7 @@ def main():
     finally:
         for arq in arquivos.values():
             arq.flush()
-            arq.unlock()
             arq.close()
-
-        mbox.close()
 
     print("\nConcluido.")
 
